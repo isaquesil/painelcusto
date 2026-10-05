@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Upper Group - Resumo Gerencial OPEX</title>
+  
+  <link rel="icon" type="image/png" href="sua_logo_aqui.png">
+  
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'sans-serif'] },
+          colors: { upper: { navy: '#003366', dark: '#0b1120', red: '#E30613', green: '#16a34a' } },
+          animation: { 'fade-in-up': 'fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards' },
+          keyframes: { fadeInUp: { '0%': { opacity: '0', transform: 'translateY(20px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } } }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body { background-color: #0b1120; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; overflow: hidden; }
+    
+    .slide-wrapper {
+      width: 1440px; height: 810px;
+      background: #f8fafc;
+      border-radius: 16px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.6);
+      position: relative; overflow: hidden;
+      display: flex; flex-direction: column;
+    }
+
+    .slide-wrapper::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 6px; background: linear-gradient(90deg, #003366 0%, #003366 50%, #E30613 50%, #E30613 100%); }
+    .custom-scroll::-webkit-scrollbar { width: 6px; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    .glass-header { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); }
+    #uploadScreen { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.9); backdrop-filter: blur(5px); z-index: 9999; display: flex; justify-content: center; align-items: center; }
+
+    /* CSS DE IMPRESSÃO: FOTO EXATA DA TELA EM TAMANHO CUSTOMIZADO (SEM PRECISAR AJUSTAR ESCALA) */
+    @media print {
+      /* Define o papel exatamente com a mesma largura e altura do painel */
+      @page { size: 1440px 810px; margin: 0; }
+      
+      html, body { 
+        background-color: #f8fafc !important; 
+        margin: 0 !important; 
+        padding: 0 !important; 
+        width: 1440px !important;
+        height: 810px !important;
+        overflow: hidden !important; 
+      }
+      
+      #uploadScreen, #botoesExportacao { display: none !important; }
+      
+      .slide-wrapper { 
+        width: 1440px !important; 
+        height: 810px !important; 
+        box-shadow: none !important; 
+        border: none !important; 
+        border-radius: 0 !important; 
+        position: absolute !important; 
+        top: 0 !important; 
+        left: 0 !important;
+        overflow: hidden !important;
+        transform: none !important; /* Sem zoom forçado, o navegador já fará o encaixe perfeito */
+      }
+
+      /* TRAVA A TABELA PARA NÃO ESTICAR */
+      .custom-scroll { overflow: hidden !important; max-height: 100% !important; }
+      
+      /* Libera a altura do gráfico para a impressora desenhar */
+      .chart-container { height: 350px !important; display: block !important; }
+      canvas { width: 100% !important; height: 100% !important; }
+
+      * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    }
+  </style>
+</head>
+<body class="text-slate-800 antialiased selection:bg-upper-navy selection:text-white">
+
+  <!-- TELA DE UPLOAD -->
+  <div id="uploadScreen">
+    <div class="flex flex-col items-center gap-4 bg-white p-10 rounded-2xl shadow-2xl border border-slate-200">
+      <h2 class="text-2xl font-black text-upper-navy uppercase tracking-widest mb-2">Painel Dinâmico de Opex</h2>
+      <p class="text-sm font-medium text-slate-500 mb-6 text-center max-w-sm">Selecione a Planilha Limpa (CSV) para visualizar o dashboard.</p>
+      
+      <label for="csvFileInput" class="cursor-pointer bg-upper-navy hover:bg-blue-900 text-white px-8 py-4 rounded-xl font-bold transition-all flex items-center gap-2">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+        Carregar Dados
+      </label>
+      <input type="file" id="csvFileInput" accept=".csv" class="hidden" onchange="processarCSV(event)">
+    </div>
+  </div>
+
+  <div class="slide-wrapper p-6 flex flex-col gap-4 hidden" id="mainSlide">
+    
+    <!-- HEADER -->
+    <header class="glass-header flex justify-between items-center pb-3 border-b border-slate-200 relative shrink-0 z-20">
+      <div class="absolute -bottom-px left-0 w-48 h-0.5 bg-gradient-to-r from-upper-red to-transparent"></div>
+      
+      <div class="flex items-center gap-5">
+        <div class="h-12 flex items-center justify-center">
+          <img src="./logo.png" alt="Upper Group Logo" class="h-full object-contain" onerror="this.outerHTML='<div class=\'border-2 border-upper-navy rounded-xl px-4 py-1 flex flex-col items-center bg-white shadow-sm hover:shadow-md transition-shadow\'><span class=\'font-black text-lg tracking-widest text-upper-navy leading-tight\'>UPPER</span><span class=\'text-[7px] tracking-[0.25em] font-extrabold text-slate-500 uppercase\'>Group</span></div>'">
+        </div>
+        
+        <div class="flex flex-col">
+          <h1 class="text-[22px] font-black text-slate-900 uppercase tracking-tight">Resumo Gerencial de Opex</h1>
+          <div class="flex items-center gap-2 text-xs text-slate-500 font-semibold mt-0.5">
+            <span>Grupo: <strong id="lblGrupo" class="text-upper-navy font-black uppercase">Consolidado Total</strong></span>
+            <span class="text-slate-300">|</span>
+            <span>Pacote: <strong id="lblPacote" class="text-upper-navy font-black uppercase">Todos</strong></span>
+            <span class="text-slate-300">|</span>
+            <span>Gestor: <strong id="lblPacoteiro" class="text-upper-navy font-black uppercase">Todos</strong></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- CONTROLES -->
+      <div class="flex items-center gap-2 bg-slate-900 p-2 rounded-xl border border-slate-700" id="botoesExportacao">
+        <select id="seletorGrupo" onchange="alterarVisualizacao()" class="bg-slate-800 text-white border border-slate-600 rounded-lg px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-upper-red outline-none cursor-pointer hover:bg-slate-700 transition-colors w-40">
+          <option value="TOTAL">1. Visão Consolidada</option>
+        </select>
+        <select id="seletorPacote" onchange="alterarVisualizacao()" class="bg-slate-800 text-white border border-slate-600 rounded-lg px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-upper-red outline-none cursor-pointer hover:bg-slate-700 transition-colors w-40">
+          <option value="TODOS">2. Todos os Pacotes</option>
+        </select>
+        <select id="seletorPacoteiro" onchange="alterarVisualizacao()" class="bg-slate-800 text-white border border-slate-600 rounded-lg px-3 py-2 text-xs font-bold focus:ring-2 focus:ring-upper-red outline-none cursor-pointer hover:bg-slate-700 transition-colors w-36">
+          <option value="TODOS">3. Gestores (Todos)</option>
+        </select>
+
+        <div class="w-px h-6 bg-slate-700 mx-1"></div>
+
+        <button onclick="resetarDashboard()" class="text-slate-300 hover:text-white hover:bg-slate-800 px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1">Reset</button>
+        
+        <label for="csvFileInputRefresh" class="cursor-pointer bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1">Atualizar CSV</label>
+        <input type="file" id="csvFileInputRefresh" accept=".csv" class="hidden" onchange="processarCSV(event)">
+
+        <button onclick="window.print()" class="bg-upper-green hover:bg-green-700 text-white px-3 py-2 rounded-lg text-xs font-bold transition-all shadow-[0_0_10px_rgba(22,163,74,0.4)] flex items-center gap-1">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg> Imprimir PDF
+        </button>
+      </div>
+    </header>
+
+    <div class="flex-1 grid grid-cols-12 gap-5 min-h-0">
+      
+      <!-- COLUNA ESQUERDA -->
+      <div class="col-span-5 flex flex-col gap-4 min-h-0">
+        
+        <div class="grid grid-cols-2 gap-4 shrink-0">
+          <div class="bg-white border-l-4 border-upper-navy border-y border-r border-slate-200 rounded-xl p-3.5 shadow-sm flex flex-col justify-center relative overflow-hidden">
+            <p class="text-[10px] font-extrabold text-upper-navy uppercase tracking-wider mb-1 relative z-10">Escopo Gerencial</p>
+            <p class="text-[11px] text-slate-500 font-medium leading-tight relative z-10">Monitoramento OPEX dinâmico atualizável via CSV local. Lendo posições exatas.</p>
+          </div>
+          <div class="bg-red-50 border-l-4 border-upper-red border-y border-r border-red-100 rounded-xl p-3.5 shadow-sm flex flex-col justify-end items-end relative overflow-hidden">
+            <p class="text-[10px] font-extrabold text-upper-red uppercase tracking-wider mb-1 relative z-10">Saldo Disp. Anual</p>
+            <h2 class="text-2xl font-black text-slate-900 tracking-tight relative z-10" id="bannerSaldoVal">R$ 0</h2>
+          </div>
+        </div>
+
+        <div class="flex-1 bg-white border border-slate-200 rounded-xl flex flex-col overflow-hidden min-h-0 relative">
+          <div class="absolute top-8 left-0 right-0 h-3 bg-gradient-to-b from-black/5 to-transparent z-10 pointer-events-none"></div>
+          <div class="flex-1 overflow-y-auto custom-scroll p-1">
+            <table class="w-full text-left border-collapse text-[10px]">
+              <thead class="bg-slate-50/90 backdrop-blur-sm text-[9px] uppercase font-bold text-slate-500 sticky top-0 z-20 shadow-sm">
+                <tr>
+                  <th class="py-2.5 px-3">Grupo</th>
+                  <th class="py-2.5 px-3">Pacote</th>
+                  <th class="py-2.5 px-3">Gestor</th>
+                  <th class="py-2.5 px-3 text-right">Realizado</th>
+                  <th class="py-2.5 px-3 text-right">Budget</th>
+                  <th class="py-2.5 px-3 text-right">Atg(%)</th>
+                </tr>
+              </thead>
+              <tbody id="tabelaResumo" class="text-slate-700 font-medium divide-y divide-slate-100"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="bg-white border border-slate-200 rounded-xl p-4 shadow-sm shrink-0 flex flex-col gap-3 relative overflow-hidden">
+          <div class="flex justify-between items-center border-b border-slate-100 pb-2">
+            <h3 class="text-[11px] font-black text-upper-navy uppercase tracking-wide flex items-center gap-1.5">Análise de Performance</h3>
+            <span id="badgeStatus" class="px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-green-100 text-green-700 border border-green-200">Status</span>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div class="bg-slate-50 rounded-lg p-2.5 border border-slate-100">
+              <p class="text-[9px] font-extrabold text-slate-500 uppercase mb-0.5">Economia Gerada</p>
+              <p class="text-[15px] font-black text-upper-green" id="kpiEcoVal">R$ 0</p>
+            </div>
+            <div class="bg-slate-50 rounded-lg p-2.5 border border-slate-100">
+              <p class="text-[9px] font-extrabold text-slate-500 uppercase mb-0.5">Var. vs Ano Ant.</p>
+              <p class="text-[15px] font-black text-slate-800" id="kpiVar25Val">0%</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-slate-900 rounded-xl p-4 border border-slate-700 shrink-0 text-white">
+          <div class="flex justify-between items-center mb-3">
+            <h3 class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Execução & Projeção</h3>
+            <span class="text-[9px] font-bold text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded border border-emerald-400/20">Base Dinâmica CSV</span>
+          </div>
+          <div class="grid grid-cols-3 gap-3">
+            <div class="bg-white/5 border border-white/10 rounded-lg p-2.5">
+              <p class="text-[9px] font-bold text-slate-300 uppercase mb-0.5">YTD Executado</p>
+              <p class="text-sm font-black text-white" id="stepExecVal">R$ 0</p>
+            </div>
+            <div class="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-2.5">
+              <p class="text-[9px] font-bold text-emerald-400 uppercase mb-0.5">Saldo Livre</p>
+              <p class="text-sm font-black text-emerald-400" id="stepSaldoVal2">R$ 0</p>
+            </div>
+            <div class="bg-blue-500/10 border border-blue-500/20 rounded-lg p-2.5">
+              <p class="text-[9px] font-bold text-blue-300 uppercase mb-0.5">Orçamento 12m</p>
+              <p class="text-sm font-black text-blue-300" id="stepBudTotal">R$ 0</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- COLUNA DIREITA -->
+      <div class="col-span-7 flex flex-col gap-4 min-h-0">
+        
+        <div class="grid grid-cols-3 gap-4 shrink-0">
+          <div class="bg-white border-t-4 border-upper-red border-x border-b border-slate-200 rounded-xl p-4 shadow-sm">
+            <p class="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">Realizado Atual</p>
+            <h2 class="text-3xl font-black text-slate-900 tracking-tighter" id="cardReal2026">R$ 0</h2>
+            <p class="text-[10px] font-bold mt-1.5 flex items-center gap-1" id="subReal2026">Aguardando...</p>
+          </div>
+          
+          <div class="bg-white border-t-4 border-slate-400 border-x border-b border-slate-200 rounded-xl p-4 shadow-sm">
+            <p class="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">Budget OPEX</p>
+            <h2 class="text-3xl font-black text-upper-navy tracking-tighter" id="cardBudget">R$ 0</h2>
+            <p class="text-[10px] font-bold text-slate-400 mt-1.5"><span id="subBudget">Atingimento: 0%</span></p>
+          </div>
+          
+          <div class="bg-white border-t-4 border-upper-navy border-x border-b border-slate-200 rounded-xl p-4 shadow-sm">
+            <p class="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider mb-1">Realizado Ano Ant.</p>
+            <h2 class="text-3xl font-black text-slate-800 tracking-tighter" id="cardReal2025">R$ 0</h2>
+            <p class="text-[10px] font-bold text-slate-400 mt-1.5">Comparativo Histórico</p>
+          </div>
+        </div>
+
+        <div class="bg-slate-50 border border-slate-200 rounded-xl p-4 flex gap-6 shrink-0 relative overflow-hidden">
+          <div class="relative z-10 flex flex-col items-center justify-center pr-6 border-r border-slate-200">
+            <p class="text-[10px] font-extrabold text-upper-navy uppercase tracking-wider mb-2">Consumo do Ano</p>
+            <div class="w-20 h-20 relative">
+              <canvas id="donutChart"></canvas>
+              <div class="absolute inset-0 flex flex-col items-center justify-center">
+                <span class="text-sm font-black text-slate-900" id="donutPercent">0%</span>
+                <span class="text-[6px] font-bold text-slate-400 uppercase">Executado</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="relative z-10 flex flex-col justify-center flex-1">
+            <p class="text-[10px] font-extrabold text-slate-800 uppercase tracking-wider mb-2">Filtro de Período</p>
+            <div class="flex flex-wrap gap-1.5 mb-2" id="filterMonths"></div>
+            <div class="flex gap-1.5">
+              <button class="btn-filter-lote px-3 py-1.5 rounded-md text-[10px] font-extrabold border transition-all hover:-translate-y-0.5" onclick="filtrarLote('Q1')">Q1</button>
+              <button class="btn-filter-lote px-3 py-1.5 rounded-md text-[10px] font-extrabold border transition-all hover:-translate-y-0.5" onclick="filtrarLote('Q2')">Q2</button>
+              <button class="btn-filter-lote px-3 py-1.5 rounded-md text-[10px] font-extrabold border transition-all hover:-translate-y-0.5" onclick="filtrarLote('Q3')">Q3</button>
+              <button class="btn-filter-lote px-3 py-1.5 rounded-md text-[10px] font-extrabold border transition-all hover:-translate-y-0.5" onclick="filtrarLote('Q4')">Q4</button>
+              <button class="btn-filter-lote px-3 py-1.5 rounded-md text-[10px] font-extrabold border transition-all hover:-translate-y-0.5 active bg-indigo-600 text-white border-indigo-600" onclick="filtrarLote('ALL')">12 Meses</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-white border border-slate-200 rounded-xl p-4 flex flex-col flex-1 min-h-0 relative chart-container">
+          <div class="flex justify-between items-center mb-2 shrink-0">
+            <h3 class="text-xs font-black text-upper-navy uppercase tracking-wide">Evolução Temporal Customizada</h3>
+          </div>
+          <div class="flex-1 relative w-full h-full min-h-0">
+            <canvas id="graficoExecutivo"></canvas>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let rawData = [];
+    const nomeMeses = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    let mesesAtivos = [true, true, true, true, true, true, true, true, true, true, true, true]; 
+    let grupoAtual = 'TOTAL';
+    let pacoteAtual = 'TODOS';
+    let pacoteiroAtual = 'TODOS';
+
+    const sum = (arr, start=0, end=arr.length) => arr.slice(start, end).reduce((a,b)=>a+b, 0);
+    const format = (num) => 'R$ ' + Math.round(num).toLocaleString('pt-BR');
+    const formatMil = (num) => 'R$ ' + (num / 1000000).toFixed(2).replace('.', ',') + ' M';
+    const formatKTable = (num) => {
+      if (Math.abs(num) >= 1000000) return 'R$ ' + (num / 1000000).toFixed(2).replace('.', ',') + ' M';
+      return 'R$ ' + (num / 1000).toFixed(1).replace('.', ',') + ' k';
+    };
+
+    function animateValue(obj, start, end, duration, formatter) {
+      if (!obj) return;
+      let startTimestamp = null;
+      const easeOut = t => 1 - Math.pow(1 - t, 4);
+      
+      const step = (timestamp) => {
+        if (!startTimestamp) startTimestamp = timestamp;
+        const progress = Math.min((timestamp - startTimestamp) / duration, 1);
+        const easedProgress = easeOut(progress);
+        
+        obj.innerHTML = formatter(easedProgress * (end - start) + start);
+        if (progress < 1) {
+          window.requestAnimationFrame(step);
+        } else {
+          obj.innerHTML = formatter(end);
+        }
+      };
+      window.requestAnimationFrame(step);
+    }
+
+    function converterMoeda(valor) {
+      if (!valor) return 0;
+      if (typeof valor === 'number') return valor;
+      let valLimpo = valor.toString().replace('R$', '').replace(/\./g, '').replace(',', '.').trim();
+      return parseFloat(valLimpo) || 0;
+    }
+
+    function processarCSV(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      Papa.parse(file, {
+        header: false,
+        skipEmptyLines: true,
+        encoding: "ISO-8859-1",
+        complete: function(results) {
+          const dadosArray = results.data;
+          
+          rawData = dadosArray.slice(1).map(linha => {
+            if (linha[0] && linha[0].toUpperCase().includes('TOTAL')) return null;
+            if (linha[41] === undefined) return null; 
+
+            let r26 = []; let b26 = []; let r25 = [];
+            for(let m=0; m<12; m++){
+              r25.push(converterMoeda(linha[5 + (m * 3)]));
+              b26.push(converterMoeda(linha[6 + (m * 3)]));
+              r26.push(converterMoeda(linha[7 + (m * 3)]));
+            }
+
+            return {
+              grupo: (linha[0] || 'Sem Grupo').replace('Mo de Obra', 'Mão de Obra').replace('Logstica', 'Logística'),
+              pacote: (linha[1] || 'Sem Pacote').replace('Salrios', 'Salários').replace('Benefcios', 'Benefícios').replace('Provises', 'Provisões').replace('Veiculos', 'Veículos').replace('Prpria', 'Própria').replace('Logstica', 'Logística').replace('Anlises', 'Análises').replace('Qumicos', 'Químicos').replace('Aluguis', 'Aluguéis').replace('Reclamatria', 'Reclamatória'),
+              pacoteiro: (linha[2] || 'Sem Gestor'),
+              r25: r25,
+              b26: b26,
+              r26: r26
+            };
+          }).filter(x => x !== null);
+
+          document.getElementById('uploadScreen').style.display = 'none';
+          document.getElementById('mainSlide').classList.remove('hidden');
+          
+          if (!chartInstance) initCharts();
+          gerarBotoesMeses();
+          popularFiltrosDinamicos(); 
+          filtrarLote('ALL'); 
+        }
+      });
+    }
+
+    let chartInstance, donutInstance;
+
+    function initCharts() {
+      const ctxBar = document.getElementById('graficoExecutivo').getContext('2d');
+      chartInstance = new Chart(ctxBar, {
+        type: 'bar',
+        data: { labels: [], datasets: [] },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          animation: { duration: 1500, easing: 'easeOutQuart' },
+          plugins: { legend: { position: 'top', align: 'end', labels: { boxWidth: 10, font: { size: 9, family: 'Inter', weight: '700' }, color: '#334155' } } },
+          scales: { 
+            y: { ticks: { callback: v => 'R$ ' + (v / 1000).toFixed(0) + 'k', font: { size: 9, family: 'Inter' } }, grid: { borderDash: [2, 2] } }, 
+            x: { ticks: { font: { size: 9, weight: '700', family: 'Inter' } }, grid: { display: false } } 
+          }
+        }
+      });
+
+      const ctxDonut = document.getElementById('donutChart').getContext('2d');
+      donutInstance = new Chart(ctxDonut, {
+        type: 'doughnut', data: { labels: ['Executado', 'Saldo'], datasets: [{ data: [0, 100], backgroundColor: ['#003366', '#e2e8f0'], borderWidth: 0, cutout: '78%' }] },
+        options: { responsive: true, maintainAspectRatio: false, animation: { duration: 1500, easing: 'easeOutQuart' }, plugins: { legend: { display: false } } }
+      });
+      
+      window.addEventListener('beforeprint', () => { chartInstance.resize(); donutInstance.resize(); });
+    }
+
+    function popularFiltrosDinamicos() {
+      let gruposSet = new Set();
+      let pacotesSet = new Set();
+      let pacoteirosSet = new Set();
+      
+      rawData.forEach(r => {
+        if(r.grupo) gruposSet.add(r.grupo);
+        if(r.pacote) pacotesSet.add(r.pacote);
+        if(r.pacoteiro) pacoteirosSet.add(r.pacoteiro);
+      });
+
+      let selG = document.getElementById('seletorGrupo');
+      selG.innerHTML = '<option value="TOTAL">1. Visão Consolidada</option>';
+      Array.from(gruposSet).sort().forEach(g => selG.add(new Option(g, g)));
+
+      let selP = document.getElementById('seletorPacote');
+      selP.innerHTML = '<option value="TODOS">2. Todos os Pacotes</option>';
+      Array.from(pacotesSet).sort().forEach(p => selP.add(new Option(p, p)));
+
+      let selM = document.getElementById('seletorPacoteiro');
+      selM.innerHTML = '<option value="TODOS">3. Gestores (Todos)</option>';
+      Array.from(pacoteirosSet).sort().forEach(m => selM.add(new Option(m, m)));
+    }
+
+    function gerarBotoesMeses() {
+      const container = document.getElementById('filterMonths');
+      container.innerHTML = '';
+      nomeMeses.forEach((mes, idx) => {
+        let btn = document.createElement('button');
+        btn.id = 'btn-mes-' + idx;
+        btn.innerText = mes;
+        btn.onclick = () => filtrarExato(mes);
+        container.appendChild(btn);
+      });
+    }
+
+    function resetarDashboard() {
+      document.getElementById('seletorGrupo').value = 'TOTAL';
+      document.getElementById('seletorPacote').value = 'TODOS';
+      document.getElementById('seletorPacoteiro').value = 'TODOS';
+      filtrarLote('ALL'); 
+    }
+
+    let valAntigoReal = 0, valAntigoBud = 0, valAntigoAnoAnt = 0, valAntigoSaldo = 0;
+    let kpiAntigoEco = 0, ytdExecAntigo = 0, saldoLivreAntigo = 0, orcamentoAnualAntigo = 0;
+
+    function alterarVisualizacao() {
+      grupoAtual = document.getElementById('seletorGrupo').value;
+      pacoteAtual = document.getElementById('seletorPacote').value;
+      pacoteiroAtual = document.getElementById('seletorPacoteiro').value;
+
+      let dadosFiltrados = rawData.filter(row => {
+        let passGrupo = (grupoAtual === 'TOTAL' || row.grupo === grupoAtual);
+        let passPacote = (pacoteAtual === 'TODOS' || row.pacote === pacoteAtual);
+        let passPacoteiro = (pacoteiroAtual === 'TODOS' || row.pacoteiro === pacoteiroAtual);
+        return passGrupo && passPacote && passPacoteiro;
+      });
+
+      let r26 = new Array(12).fill(0), r25 = new Array(12).fill(0), b26 = new Array(12).fill(0);
+      dadosFiltrados.forEach(row => {
+        for(let i=0; i<12; i++) { 
+          r26[i] += row.r26[i]||0; 
+          r25[i] += row.r25[i]||0; 
+          b26[i] += row.b26[i]||0; 
+        }
+      });
+
+      let ytdReal = 0, ytdBud = 0, ytdAnt = 0;
+      for(let i=0; i<12; i++) {
+        if(mesesAtivos[i]) { 
+          ytdReal += r26[i]; 
+          ytdBud += b26[i]; 
+          ytdAnt += r25[i]; 
+        }
+      }
+
+      const totalBud12 = sum(b26, 0, 12);
+      const ytdAcumuladoGeral = ytdReal; 
+      const saldoTotalAnual = totalBud12 - ytdAcumuladoGeral;
+
+      document.getElementById('lblGrupo').innerText = grupoAtual === 'TOTAL' ? 'Consolidado Total' : grupoAtual;
+      document.getElementById('lblPacote').innerText = pacoteAtual === 'TODOS' ? 'Todos' : pacoteAtual;
+      document.getElementById('lblPacoteiro').innerText = pacoteiroAtual === 'TODOS' ? 'Todos' : pacoteiroAtual.split(' ')[0];
+
+      renderizarTabela(dadosFiltrados);
+
+      animateValue(document.getElementById('cardReal2026'), valAntigoReal, ytdReal, 1200, format);
+      animateValue(document.getElementById('cardBudget'), valAntigoBud, ytdBud, 1200, format);
+      animateValue(document.getElementById('cardReal2025'), valAntigoAnoAnt, ytdAnt, 1200, format);
+      animateValue(document.getElementById('bannerSaldoVal'), valAntigoSaldo, saldoTotalAnual, 1200, format);
+      
+      animateValue(document.getElementById('stepExecVal'), ytdExecAntigo, ytdAcumuladoGeral, 1200, formatMil);
+      animateValue(document.getElementById('stepSaldoVal2'), saldoLivreAntigo, saldoTotalAnual, 1200, formatMil);
+      animateValue(document.getElementById('stepBudTotal'), orcamentoAnualAntigo, totalBud12, 1200, formatMil);
+
+      valAntigoReal = ytdReal; valAntigoBud = ytdBud; valAntigoAnoAnt = ytdAnt; valAntigoSaldo = saldoTotalAnual;
+      ytdExecAntigo = ytdAcumuladoGeral; saldoLivreAntigo = saldoTotalAnual; orcamentoAnualAntigo = totalBud12;
+
+      const ating = ytdBud > 0 ? ((ytdReal / ytdBud) * 100).toFixed(1) : 0;
+      const var25 = ytdAnt > 0 ? (((ytdReal - ytdAnt) / ytdAnt) * 100).toFixed(1) : 0;
+      const eco = ytdBud - ytdReal;
+
+      document.getElementById('subBudget').innerText = `Atingimento: ${isNaN(ating)||!isFinite(ating)?0:ating}%`;
+      
+      const subRealEl = document.getElementById('subReal2026');
+      const isRed = var25 >= 0;
+      subRealEl.innerHTML = `<span class="w-2 h-2 rounded-full ${isRed ? 'bg-upper-red' : 'bg-upper-green'}"></span> ${var25 < 0 ? '↘' : '↗'} ${isNaN(var25)||!isFinite(var25)?0:Math.abs(var25).toFixed(1)}% vs Ano Ant.`;
+      subRealEl.className = `text-[10px] font-bold mt-1.5 flex items-center gap-1.5 ${isRed ? 'text-upper-red' : 'text-upper-green'}`;
+      
+      animateValue(document.getElementById('kpiEcoVal'), kpiAntigoEco, eco, 1200, format);
+      kpiAntigoEco = eco;
+      
+      document.getElementById('kpiEcoVal').style.color = eco >= 0 ? '#16a34a' : '#E30613';
+      document.getElementById('kpiVar25Val').innerText = `${isNaN(var25)||!isFinite(var25)?0:var25}%`;
+
+      document.getElementById('badgeStatus').innerText = eco >= 0 ? `DENTRO DA META: ${isNaN(ating)||!isFinite(ating)?0:ating}%` : `OVERBUDGET: ${isNaN(ating)||!isFinite(ating)?0:ating}%`;
+      document.getElementById('badgeStatus').className = eco >= 0 ? 'px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-green-100 text-green-700 border border-green-200' : 'px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider bg-red-100 text-red-700 border border-red-200';
+
+      atualizarGraficoBarras(r26, r25, b26);
+      
+      const percConsumido = totalBud12 > 0 ? (ytdAcumuladoGeral / totalBud12) * 100 : 0;
+      document.getElementById('donutPercent').innerText = percConsumido.toFixed(0) + '%';
+      donutInstance.data.datasets[0].data = [percConsumido, Math.max(0, 100 - percConsumido)];
+      donutInstance.data.datasets[0].backgroundColor = [percConsumido > 100 ? '#E30613' : '#003366', '#e2e8f0'];
+      donutInstance.update();
+    }
+
+    function renderizarTabela(dados) {
+      let linhas = {};
+      
+      dados.forEach(r => {
+        let key = r.grupo + '|' + r.pacote + '|' + r.pacoteiro;
+        if(!linhas[key]) linhas[key] = { grupo: r.grupo, pacote: r.pacote, pacoteiro: r.pacoteiro, r26:0, b26:0 };
+        for(let i=0; i<12; i++) {
+          if(mesesAtivos[i]) {
+            linhas[key].r26 += r.r26[i]||0;
+            linhas[key].b26 += r.b26[i]||0;
+          }
+        }
+      });
+
+      let sorted = Object.values(linhas).sort((a,b) => b.b26 - a.b26);
+      const tb = document.getElementById('tabelaResumo');
+      tb.innerHTML = '';
+
+      sorted.forEach(v => {
+        if(v.b26 === 0 && v.r26 === 0) return;
+        let ating = v.b26 > 0 ? ((v.r26 / v.b26) * 100).toFixed(1) : 0;
+        let isGood = v.r26 <= v.b26;
+        let gestor = v.pacoteiro.split(' ')[0]; 
+
+        tb.innerHTML += `<tr class="table-row-hover border-b border-slate-100">
+          <td class="py-2.5 px-3 font-extrabold text-slate-800">${v.grupo}</td>
+          <td class="py-2.5 px-3 font-semibold text-slate-500">${v.pacote}</td>
+          <td class="py-2.5 px-3 font-semibold text-slate-600">${gestor}</td>
+          <td class="py-2.5 px-3 text-right font-bold text-slate-700">${formatKTable(v.r26)}</td>
+          <td class="py-2.5 px-3 text-right font-medium text-slate-500">${formatKTable(v.b26)}</td>
+          <td class="py-2.5 px-3 text-right font-black ${isGood ? 'text-upper-green' : 'text-upper-red'}">${isNaN(ating)||!isFinite(ating)?'-':ating+'%'}</td>
+        </tr>`;
+      });
+    }
+
+    function atualizarGraficoBarras(r26, r25, b26) {
+      let labels = [], data26 = [], data25 = [], dataBud = [];
+      
+      for(let i=0; i<12; i++) {
+        if(mesesAtivos[i]) {
+          labels.push(nomeMeses[i]);
+          data26.push(r26[i]);
+          data25.push(r25[i]);
+          dataBud.push(b26[i]);
+        }
+      }
+
+      const ctx = document.getElementById('graficoExecutivo').getContext('2d');
+      let gradRed = ctx.createLinearGradient(0, 0, 0, 400);
+      gradRed.addColorStop(0, '#E30613'); gradRed.addColorStop(1, '#990000');
+      let gradBlue = ctx.createLinearGradient(0, 0, 0, 400);
+      gradBlue.addColorStop(0, '#00509E'); gradBlue.addColorStop(1, '#002244');
+
+      chartInstance.data.labels = labels;
+      chartInstance.data.datasets = [
+        { label: 'Real Atual', data: data26, backgroundColor: gradRed, borderRadius: 6, maxBarThickness: 24, order: 3 },
+        { label: 'Real Ano Ant.', data: data25, backgroundColor: gradBlue, borderRadius: 6, maxBarThickness: 24, order: 4 },
+        { label: 'Budget Meta', data: dataBud, type: 'line', borderColor: '#94a3b8', borderWidth: 2.5, borderDash: [6, 4], pointBackgroundColor: '#ffffff', pointBorderColor: '#64748b', fill: false, tension: 0.3, order: 1 }
+      ];
+      
+      const maxVal = Math.max(...data26, ...data25, ...dataBud);
+      chartInstance.options.scales.y.max = maxVal * 1.15;
+      
+      chartInstance.update();
+    }
+
+    function filtrarExato(mes) {
+      const idx = nomeMeses.indexOf(mes);
+      mesesAtivos[idx] = !mesesAtivos[idx];
+      atualizarBotoesVisuais(); alterarVisualizacao();
+    }
+
+    function filtrarLote(tipo) {
+      if(tipo === 'Q1') mesesAtivos = [true,true,true, false,false,false, false,false,false, false,false,false];
+      if(tipo === 'Q2') mesesAtivos = [false,false,false, true,true,true, false,false,false, false,false,false];
+      if(tipo === 'Q3') mesesAtivos = [false,false,false, false,false,false, true,true,true, false,false,false];
+      if(tipo === 'Q4') mesesAtivos = [false,false,false, false,false,false, false,false,false, true,true,true];
+      if(tipo === 'ALL') mesesAtivos = [true,true,true, true,true,true, true,true,true, true,true,true]; 
+      atualizarBotoesVisuais(); 
+      alterarVisualizacao();
+    }
+
+    function atualizarBotoesVisuais() {
+      for(let i=0; i<12; i++) {
+        let btn = document.getElementById('btn-mes-' + i);
+        if(!btn) continue;
+        if(mesesAtivos[i]) {
+          btn.className = "px-3 py-1.5 rounded-md text-[10px] font-extrabold border transition-all bg-upper-navy text-white shadow-sm";
+        } else {
+          btn.className = "px-3 py-1.5 rounded-md text-[10px] font-extrabold border transition-all bg-white text-slate-500 border-slate-300 hover:text-upper-navy hover:border-upper-navy";
+        }
+      }
+      
+      const isQ1 = mesesAtivos.slice(0,3).every(v=>v) && !mesesAtivos.slice(3,12).some(v=>v);
+      const isQ2 = !mesesAtivos.slice(0,3).some(v=>v) && mesesAtivos.slice(3,6).every(v=>v) && !mesesAtivos.slice(6,12).some(v=>v);
+      const isQ3 = !mesesAtivos.slice(0,6).some(v=>v) && mesesAtivos.slice(6,9).every(v=>v) && !mesesAtivos.slice(9,12).some(v=>v);
+      const isQ4 = !mesesAtivos.slice(0,9).some(v=>v) && mesesAtivos.slice(9,12).every(v=>v);
+      const isAll = mesesAtivos.slice(0,12).every(v=>v);
+      
+      const btnTri = document.querySelectorAll('.btn-filter-lote');
+      const inactiveClass = "btn-filter-lote px-3 py-1.5 rounded-md text-[10px] font-extrabold border transition-all bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100";
+      const activeClass = "btn-filter-lote px-3 py-1.5 rounded-md text-[10px] font-extrabold border transition-all bg-indigo-600 text-white border-indigo-600 shadow-[0_4px_10px_rgba(79,70,229,0.4)]";
+      
+      if(btnTri.length > 0) {
+        btnTri.forEach(b => b.className = inactiveClass);
+        if(isQ1) btnTri[0].className = activeClass;
+        if(isQ2) btnTri[1].className = activeClass;
+        if(isQ3) btnTri[2].className = activeClass;
+        if(isQ4) btnTri[3].className = activeClass;
+        if(isAll) btnTri[4].className = activeClass;
+      }
+    }
+  </script>
+</body>
+</html>
